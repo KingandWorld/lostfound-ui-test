@@ -1,0 +1,6 @@
+# Day15: UI test deps (local run only, separate from API-test CI deps)
+playwright>=1.40
+pytest>=7.4
+allure-pytest>=2.13
+python-dotenv>=1.0
+pytest-rerunfailures>=16.4
