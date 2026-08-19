@@ -11,3 +11,6 @@ allure-results*/
 allure-report/
 screenshots/
 *.log
+
+# 探测/运行输出（含真实域名等敏感输出，不入库）
+scripts/*.txt
