@@ -1,8 +1,12 @@
-"""全局 fixture：base_url / browser / page / login_page / user_credentials + 失败自动截图（Day15）。
+"""全局 fixture：base_url / browser / page / login_page / logged_in_page / user_credentials + 失败自动截图（Day15~16）。
 
-设计说明（与 week3_day15.md 计划对应）：
+设计说明（与 week3_day15.md / week3_day16.md 计划对应）：
 - browser 为 session 级：整个测试会话共用一个浏览器进程（启动快、开销小）；
 - page 为 function 级：每个用例独立 context（1920x1080 + zh-CN），登录态互相隔离；
+- logged_in_page 为 Day16 新增：依赖 page + login_page 复用真实登录流程，
+  供发布/搜索等需要登录态的用例使用（每次用例独立登录，登录态不跨用例）；
+- 各页面类 fixture（home_page / lost_list_page / publish_page / register_page）
+  为 Day16 新增，用例按需注入；
 - HEADLESS 环境变量控制有头/无头：默认 headless（与服务器/CI 场景一致），
   本地调试用 `HEADLESS=false pytest ...` 打开有界面浏览器观察；
 - 失败自动截图 hook 为 Day15 预留版（Day17 完善）：call 阶段失败时，
@@ -22,7 +26,11 @@ import pytest
 from dotenv import load_dotenv
 from playwright.sync_api import Browser, Page, sync_playwright
 
+from pages.home_page import HomePage
 from pages.login_page import LoginPage
+from pages.lost_list_page import LostListPage
+from pages.publish_page import PublishPage
+from pages.register_page import RegisterPage
 
 # 默认读取项目根目录 .env（pytest 在项目根目录运行即可生效）
 load_dotenv()
@@ -77,6 +85,48 @@ def base_url():
 def login_page(page):
     """登录页 Page Object 实例。"""
     return LoginPage(page)
+
+
+@pytest.fixture
+def logged_in_page(page, login_page, base_url, user_credentials):
+    """已登录的页面实例（Day16）：复用真实登录流程，供发布/搜索等用例使用。
+
+    设计说明：每个用例通过 page fixture 拿到独立 context，登录态互不污染；
+    登录成功标准与 Day15 一致（跳转首页 + localStorage token 非空）。
+    返回的是已登录的 page，后续用例可直接 goto 目标页面。
+    """
+    login_page.go(base_url)
+    login_page.login(user_credentials["username"], user_credentials["password"])
+    login_page.wait_for_url("**/", timeout=15_000)
+    login_page.wait_for_load_state()
+    assert login_page.page.evaluate(
+        "localStorage.getItem('token')"
+    ), "logged_in_page 登录失败：localStorage 无 token"
+    return page
+
+
+@pytest.fixture
+def home_page(page):
+    """首页 Page Object 实例。"""
+    return HomePage(page)
+
+
+@pytest.fixture
+def lost_list_page(page):
+    """失物列表页 Page Object 实例。"""
+    return LostListPage(page)
+
+
+@pytest.fixture
+def publish_page(page):
+    """发布页 Page Object 实例。"""
+    return PublishPage(page)
+
+
+@pytest.fixture
+def register_page(page):
+    """注册页 Page Object 实例。"""
+    return RegisterPage(page)
 
 
 @pytest.fixture
