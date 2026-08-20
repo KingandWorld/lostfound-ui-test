@@ -66,6 +66,12 @@ class LostListPage(BasePage):
         """所有物品卡片的文本（用于断言搜索结果包含关键词）。"""
         return [c.inner_text() for c in self.page.locator(self.ITEM_CARDS).all()]
 
+    @allure.step("点击第 {index} 张物品卡片进入详情页")
+    def open_card_detail(self, index: int = 0):
+        """点击第 index 张物品卡片，等待跳转详情页（URL /lost/detail/{id}，Day17）。"""
+        self.page.locator(self.ITEM_CARDS).nth(index).click()
+        self.wait_for_url("**/lost/detail/**", timeout=10_000)
+
     def go_to_publish(self):
         """点击「发布失物信息」按钮进入发布页 /lost/publish。"""
         with allure.step("点击发布失物信息（列表页入口）"):

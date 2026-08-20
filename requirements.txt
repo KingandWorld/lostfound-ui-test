@@ -4,3 +4,8 @@ pytest>=7.4
 allure-pytest>=2.13
 python-dotenv>=1.0
 pytest-rerunfailures>=16.4
+
+# Day17: 认领用例的数据前置校验与 teardown 清理（与接口项目同款 API 只读/清理）
+requests>=2.31
+
+allure-python-commons~=2.16.0

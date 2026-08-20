@@ -12,30 +12,42 @@
 ```
 lostfound-ui-test/
 ├── .env                     # 环境变量（BASE_URL / 测试账号；gitignore 排除，不入库）
-├── conftest.py              # 全局 fixture：browser / page / login_page / 失败自动截图
-├── pytest.ini               # pytest 配置（testpaths / alluredir）
+├── conftest.py              # 全局 fixture：browser / page / 页面类 / 失败现场信息 / api_headers
+├── pytest.ini               # pytest 配置（testpaths / alluredir / rerunfailures 重试）
 ├── pages/                   # Page Object 页面类
-│   ├── base_page.py         # 基类：navigate/click/fill/等待/截图（通用操作封装）
-│   └── login_page.py        # 登录页：定位器集中管理 + login() 组合操作
-├── testcases/
-│   └── test_login_ui.py     # 登录流程 5 条用例（成功/邮箱/错误密码/空表单/注册跳转）
+│   ├── base_page.py         # 基类：navigate/click/fill/等待/截图 + 校验提示轮询读取
+│   ├── login_page.py        # 登录页（Day15）
+│   ├── home_page.py         # 首页（Day16）
+│   ├── lost_list_page.py    # 列表页：搜索过滤/点卡片进详情（Day16~17）
+│   ├── publish_page.py      # 发布页：publish_item() 组合流程（Day16）
+│   ├── register_page.py     # 注册页：字段校验用例（Day16）
+│   └── item_detail_page.py  # 详情页：认领流程（申请归还弹窗）（Day17）
+├── testcases/               # 用例模块（21 条：登录5/发布4/搜索2/注册5/认领5）
+│   ├── test_login_ui.py     # 登录流程（Day15）
+│   ├── test_publish_ui.py   # 发布流程（Day16）
+│   ├── test_search_ui.py    # 搜索流程（Day16）
+│   ├── test_register_ui.py  # 注册流程（Day16，含 1 条缺陷阻断 skip）
+│   └── test_claim_ui.py     # 认领流程（Day17，含 1 条认领池依赖 skip）
 ├── utils/
-│   └── screenshot_utils.py  # 截图附件工具（失败自动截图复用）
-├── scripts/
-│   └── probe_login_page.py  # 登录页行为探测脚本（开发用，实测结果已回填用例）
+│   └── screenshot_utils.py  # 截图附件工具
+├── scripts/                 # 页面探测/运行输出脚本（开发用；*.txt 不入库）
 ├── screenshots/             # 截图产物（gitignore 排除）
 └── allure-results/          # Allure 原始结果（gitignore 排除）
 ```
 
-## 测试覆盖（Day15，5 条用例）
+## 测试覆盖（Day15~17，21 条）
 
-| 用例 | 场景 | 断言 |
-|------|------|------|
-| test_login_success | 正确用户名密码登录 | URL 离开 /login 跳转首页 + localStorage token 非空 |
-| test_login_with_email | 邮箱登录 | 同上（真实账号邮箱实测确认；账号未配邮箱时跳过） |
-| test_login_wrong_password | 错误密码 | 错误提示含"用户名或密码错误" + 不跳转 + 无 token |
-| test_login_empty_form | 空表单提交 | 前端必填校验提示（.el-form-item__error） |
-| test_login_redirect_to_register | 点击注册链接 | URL 跳转 */register |
+| 模块 | 用例数 | 覆盖点 | 状态 |
+|------|:---:|--------|:---:|
+| 登录（Day15） | 5 | 成功/邮箱/错误密码/空表单/注册跳转 | ✅ |
+| 发布（Day16） | 4 | 完整发布/必填校验/未登录保护/分类下拉 | ✅ |
+| 搜索（Day16） | 2 | 已知关键词有结果/不存在关键词空结果 | ✅ |
+| 注册（Day16） | 5 | 字段校验 4 + 成功 1（协议弹窗缺陷阻断，skip） | 4✅ 1⛔ |
+| 认领（Day17） | 5 | 弹窗结构/空说明校验/重复申请拒绝/自认领拦截/成功（认领池耗尽，skip） | 4✅ 1⛔ |
+
+**认领池说明（2026-08-20 实测）**：系统缺陷——物品一旦被认领（即使已取消）永久不可
+再次认领；当前本账号历史认领单已覆盖全部他人物品，`test_claim_success` 按接口项目同款
+策略 skip（后台重置种子数据后自动恢复，见 test_claim_ui.py 注释）。
 
 ## 快速开始
 
