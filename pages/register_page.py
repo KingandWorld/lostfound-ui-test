@@ -36,8 +36,7 @@ class RegisterPage(BasePage):
     CONFIRM_PASSWORD_INPUT = "input[placeholder='确认密码']"
     AGREEMENT_CHECKBOX = ".el-checkbox"
     REGISTER_BUTTON = "button:has-text('注册')"
-    FORM_ERRORS = ".el-form-item__error"
-    MESSAGE = ".el-message"
+    # FORM_ERRORS / MESSAGE / get_form_errors / get_messages 已提升至 BasePage（Day17 重构）
 
     def go(self, base_url: str):
         """打开注册页。"""
@@ -84,20 +83,4 @@ class RegisterPage(BasePage):
         with allure.step("点击注册"):
             self.click(self.REGISTER_BUTTON)
 
-    def get_form_errors(self) -> list[str]:
-        """获取表单字段校验提示文案（提交后异步渲染，先轮询等待再读取）。"""
-        errors_locator = self.page.locator(self.FORM_ERRORS)
-        for _ in range(10):  # 最长等待 ~2s
-            if errors_locator.count() > 0:
-                break
-            self.page.wait_for_timeout(200)
-        return [e.inner_text() for e in errors_locator.all()]
-
-    def get_messages(self) -> list[str]:
-        """获取全局消息（.el-message，如"请阅读并同意用户协议"；约 3 秒自动消失）。"""
-        messages_locator = self.page.locator(self.MESSAGE)
-        for _ in range(10):  # 最长等待 ~2s
-            if messages_locator.count() > 0:
-                break
-            self.page.wait_for_timeout(200)
-        return [m.inner_text() for m in messages_locator.all()]
+    # get_form_errors / get_messages 由 BasePage 统一提供（Day17 重构，行为不变）

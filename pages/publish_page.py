@@ -38,7 +38,7 @@ class PublishPage(BasePage):
     CONTACT_EMAIL_INPUT = "input[placeholder='请输入联系邮箱']"
     SUBMIT_BUTTON = ".el-form button:has-text('发布')"  # 避开"发布失物信息"导航按钮
     SUCCESS_MESSAGE = ".el-message--success"
-    FORM_ERRORS = ".el-form-item__error"
+    # FORM_ERRORS / get_form_errors 已提升至 BasePage（Day17 重构）
 
     def go(self, base_url: str):
         """打开发布页（需登录，未登录会跳登录页并带 redirect 参数）。"""
@@ -98,15 +98,4 @@ class PublishPage(BasePage):
         self.wait_for_element(self.SUCCESS_MESSAGE, timeout=5_000)
         return self.get_text(self.SUCCESS_MESSAGE)
 
-    def get_form_errors(self) -> list[str]:
-        """获取表单校验提示文案（.el-form-item__error，实测最多 4 条同时出现）。
-
-        注意：Element Plus 校验提示在提交后异步渲染（实测约 200~800ms），
-        读取前先轮询等待提示出现，避免"断言跑在提示渲染之前"。
-        """
-        errors_locator = self.page.locator(self.FORM_ERRORS)
-        for _ in range(10):  # 最长等待 ~2s
-            if errors_locator.count() > 0:
-                break
-            self.page.wait_for_timeout(200)
-        return [e.inner_text() for e in errors_locator.all()]
+    # get_form_errors 由 BasePage 统一提供（Day17 重构，行为不变）

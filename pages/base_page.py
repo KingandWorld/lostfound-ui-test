@@ -20,7 +20,17 @@ from playwright.sync_api import Page
 
 
 class BasePage:
-    """通用页面基类：构造时注入 Playwright Page。"""
+    """通用页面基类：构造时注入 Playwright Page。
+
+    Day17 重构：get_form_errors / get_messages 从 PublishPage / RegisterPage
+    提升到基类（两处实现原为同款轮询逻辑），表单页统一复用；
+    默认选择器 FORM_ERRORS / MESSAGE 为 Element Plus 通用结构，
+    子类可按需覆写。
+    """
+
+    # Element Plus 通用结构（表单校验提示 / 全局消息；Day17 提升至基类）
+    FORM_ERRORS = ".el-form-item__error"
+    MESSAGE = ".el-message"
 
     def __init__(self, page: Page):
         self.page = page
@@ -66,6 +76,29 @@ class BasePage:
         """显式等待元素可见（关键操作/断言前用，替代盲等）。"""
         with allure.step(f"等待元素可见: {selector}"):
             self.page.locator(selector).wait_for(state="visible", timeout=timeout)
+
+    # ---------- 表单校验提示 ----------
+
+    def get_form_errors(self, timeout_ms: int = 2_000) -> list[str]:
+        """获取表单字段校验提示文案（.el-form-item__error）。
+
+        Element Plus 校验提示在提交后异步渲染（实测约 200~800ms），
+        读取前轮询等待提示出现，避免"断言跑在提示渲染之前"。
+        Day17 起由基类统一提供（PublishPage/RegisterPage/ItemDetailPage 复用）。
+        """
+        return self._poll_texts(self.page.locator(self.FORM_ERRORS), timeout_ms)
+
+    def get_messages(self, timeout_ms: int = 2_000) -> list[str]:
+        """获取全局消息（.el-message，如"请阅读并同意用户协议"；约 3 秒自动消失）。"""
+        return self._poll_texts(self.page.locator(self.MESSAGE), timeout_ms)
+
+    def _poll_texts(self, locator, timeout_ms: int) -> list[str]:
+        """轮询等待 locator 出现元素后返回全部文本（每 200ms 一次，最长为 timeout_ms）。"""
+        for _ in range(max(1, timeout_ms // 200)):
+            if locator.count() > 0:
+                break
+            self.page.wait_for_timeout(200)
+        return [el.inner_text() for el in locator.all()]
 
     # ---------- 截图留证 ----------
 

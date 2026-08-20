@@ -1,38 +1,59 @@
-"""全局 fixture：base_url / browser / page / login_page / logged_in_page / user_credentials + 失败自动截图（Day15~16）。
+"""全局 fixture：base_url / browser / page / login_page / logged_in_page / user_credentials
++ 失败自动截图 / 认领数据 API（Day15~17）。
 
-设计说明（与 week3_day15.md / week3_day16.md 计划对应）：
+设计说明（与 week3_day15.md / week3_day16.md / week3_day17.md 计划对应）：
 - browser 为 session 级：整个测试会话共用一个浏览器进程（启动快、开销小）；
 - page 为 function 级：每个用例独立 context（1920x1080 + zh-CN），登录态互相隔离；
 - logged_in_page 为 Day16 新增：依赖 page + login_page 复用真实登录流程，
   供发布/搜索等需要登录态的用例使用（每次用例独立登录，登录态不跨用例）；
-- 各页面类 fixture（home_page / lost_list_page / publish_page / register_page）
-  为 Day16 新增，用例按需注入；
+- 各页面类 fixture（home_page / lost_list_page / publish_page / register_page /
+  item_detail_page）为 Day16~17 新增，用例按需注入；
 - HEADLESS 环境变量控制有头/无头：默认 headless（与服务器/CI 场景一致），
   本地调试用 `HEADLESS=false pytest ...` 打开有界面浏览器观察；
-- 失败自动截图 hook 为 Day15 预留版（Day17 完善）：call 阶段失败时，
-  把当前页面截图（全页）作为 PNG 附件附进 Allure 报告；
+- 失败自动截图 hook Day17 完善：失败时附页面 URL + 控制台 error/warning 日志
+  + 视口/全页截图两张（原 Day15 版仅一张全页截图）；
+- api_headers 为 Day17 新增：认领用例的数据前置校验与 teardown 清理用
+  （真实登录接口拿 token，仅只读校验与清理，不参与 UI 断言）；
 - 配置统一从项目根目录 .env 读取（与接口自动化项目同一约定，同一测试账号）。
 
 用法：
-    pytest                            # headless 全量
+    pytest                            # headless 全量（含 1 次超时重试，见 pytest.ini）
     HEADLESS=false pytest             # 有头模式调试（本地观察）
     pytest -m ui                      # 按标记筛选
 """
 
 import os
+from pathlib import Path
 
 import allure
 import pytest
+import requests
 from dotenv import load_dotenv
 from playwright.sync_api import Browser, Page, sync_playwright
 
 from pages.home_page import HomePage
+from pages.item_detail_page import ItemDetailPage
 from pages.login_page import LoginPage
 from pages.lost_list_page import LostListPage
 from pages.publish_page import PublishPage
 from pages.register_page import RegisterPage
 
-# 默认读取项目根目录 .env（pytest 在项目根目录运行即可生效）
+
+def _strip_env_bom():
+    """去掉 .env 文件头的 UTF-8 BOM（2026-08-20 实测卡点，见 Day17 手册卡点表）。
+
+    Windows 编辑器保存 .env 时可能带 BOM，python-dotenv 会把 BOM 拼进第一个
+    键名（如 \\ufeffBASE_URL），导致读不到该配置、BASE_URL 静默回退 localhost。
+    加载前先修正文件本身，避免每次手动改。仅剥离 BOM 头，不触碰其他内容。
+    """
+    env_path = Path(".env")
+    if env_path.exists():
+        raw = env_path.read_bytes()
+        if raw.startswith(b"\xef\xbb\xbf"):
+            env_path.write_bytes(raw[3:])
+
+
+_strip_env_bom()
 load_dotenv()
 
 BASE_URL = os.getenv("BASE_URL", "http://localhost:8080")
@@ -42,8 +63,9 @@ TEST_PASSWORD = os.getenv("TEST_PASSWORD")
 # 未配置时邮箱登录用例跳过
 TEST_EMAIL = os.getenv("TEST_EMAIL")
 
-# 失败自动截图：用例执行中把当前 page 暂存在 node 上，makereport 失败时取出
+# 失败现场信息：用例执行中把当前 page / 控制台日志暂存在 node 上，makereport 失败时取出
 _PAGE_KEY = pytest.StashKey[Page]()
+_CONSOLE_KEY = pytest.StashKey[list[str]]()
 
 
 @pytest.fixture(scope="session")
@@ -71,13 +93,22 @@ def page(browser: Browser, request):
     )
     page = context.new_page()
     request.node.stash[_PAGE_KEY] = page
+    # Day17：收集页面控制台 error/warning，失败时随截图一起附进 Allure（前端 JS 异常排查）
+    console_errors: list[str] = []
+    request.node.stash[_CONSOLE_KEY] = console_errors
+    page.on(
+        "console",
+        lambda msg: console_errors.append(f"[{msg.type}] {msg.text}")
+        if msg.type in ("error", "warning")
+        else None,
+    )
     yield page
     context.close()
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def base_url():
-    """被测系统根地址（.env BASE_URL）。"""
+    """被测系统根地址（.env BASE_URL，只读环境变量，session 级供 api_headers 复用）。"""
     return BASE_URL
 
 
@@ -130,6 +161,29 @@ def register_page(page):
 
 
 @pytest.fixture
+def item_detail_page(page):
+    """物品详情页 Page Object 实例（Day17 认领流程）。"""
+    return ItemDetailPage(page)
+
+
+@pytest.fixture(scope="session")
+def api_headers(base_url):
+    """API 请求头（Day17 认领用例的数据前置校验与 teardown 清理用）。
+
+    通过真实登录接口拿 token（与接口自动化项目同款自定义 Header `token`），
+    session 级只登录一次。仅用于只读校验与数据清理，不参与 UI 断言。
+    """
+    resp = requests.post(
+        f"{base_url}/api/user/login",
+        json={"username": TEST_USERNAME, "password": TEST_PASSWORD},
+        timeout=10,
+    )
+    body = resp.json()
+    assert body.get("code") == "200", f"api_headers 登录失败: {body}"
+    return {"token": body["data"]["token"]}
+
+
+@pytest.fixture
 def user_credentials():
     """登录测试数据（与接口自动化项目共用同一测试账号，来自 .env）。"""
     return {"username": TEST_USERNAME, "password": TEST_PASSWORD, "email": TEST_EMAIL}
@@ -137,9 +191,16 @@ def user_credentials():
 
 @pytest.hookimpl(hookwrapper=True)
 def pytest_runtest_makereport(item, call):
-    """失败自动截图（Day15 预留版，Day17 完善）：call 阶段失败时把页面截图附进 Allure。
+    """失败自动截图（Day15 预留版 → Day17 完善版）。
 
-    注意：截图失败只记录不抛错，避免掩盖原始用例失败信息。
+    Day17 完善点（对应 week3_day17.md 任务三）：
+    1) 附失败时的页面 URL（快速定位用例停在哪一步）；
+    2) 附页面控制台 error/warning 日志（前端 JS 异常排查，最多取末 50 条）；
+    3) 截图两张：视口截图（失败现场）+ 全页截图（长页面辅助定位）。
+
+    注意：任何附加操作失败只记录不抛错，避免掩盖原始用例失败信息；
+    与 pytest-rerunfailures 配合：重试前的失败也走本 hook，最终报告
+    只保留最后一次尝试的现场（Allure 会合并重试结果）。
     """
     outcome = yield
     report = outcome.get_result()
@@ -147,11 +208,33 @@ def pytest_runtest_makereport(item, call):
         page = item.stash.get(_PAGE_KEY, None)
         if page is not None:
             try:
-                screenshot = page.screenshot(full_page=True)
                 allure.attach(
-                    screenshot,
-                    name="失败截图",
+                    page.url,
+                    name="失败时页面 URL",
+                    attachment_type=allure.attachment_type.TEXT,
+                )
+            except Exception:  # 附加信息失败不应掩盖原始失败
+                pass
+            try:
+                console_errors = item.stash.get(_CONSOLE_KEY, [])
+                if console_errors:
+                    allure.attach(
+                        "\n".join(console_errors[-50:]),
+                        name=f"页面控制台错误/警告（共 {len(console_errors)} 条，取末 50 条）",
+                        attachment_type=allure.attachment_type.TEXT,
+                    )
+            except Exception:
+                pass
+            try:
+                allure.attach(
+                    page.screenshot(full_page=False),
+                    name="失败截图-视口",
                     attachment_type=allure.attachment_type.PNG,
                 )
-            except Exception:  # 截图失败不应掩盖原始失败
+                allure.attach(
+                    page.screenshot(full_page=True),
+                    name="失败截图-全页",
+                    attachment_type=allure.attachment_type.PNG,
+                )
+            except Exception:
                 pass
