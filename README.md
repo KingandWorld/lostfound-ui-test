@@ -2,9 +2,10 @@
 
 > **技术栈**：Playwright（Python sync_api）+ pytest + allure-pytest + Page Object 模式
 > **开始日期**：2026-08-18（第3周 Day15）
-> **运行策略（方案C）**：UI 测试**本地运行**，Allure 报告手动合并——接口测试跑服务器
-> Jenkins CI（见 `../lostfound-api-test-示例/`），UI 测试本地跑（4G 服务器 headless
-> Chromium 有 OOM 风险，决策记录见 week2_day14 手册第 4 步）。
+> **运行策略（方案C，Day18 决策落地）**：UI 测试**本地一键运行**，Allure 报告手动合并——
+> 接口测试跑服务器 Jenkins CI（见 `../lostfound-api-test-示例/`），UI 测试本地跑。
+> 决策依据（2026-08-21 服务器内存实测：空闲可用仅 ~758MiB，低于 headless Chromium
+> 单实例需求）：`docs/UI自动化CI集成方案决策文档.md`；决策历程见 week2_day14 手册第 4 步。
 > **配套文档**：`../../示例/week3_day15_示例-UI自动化框架选型与第一个脚本开发手册.md`
 
 ## 目录结构
@@ -30,6 +31,10 @@ lostfound-ui-test/
 │   └── test_claim_ui.py     # 认领流程（Day17，含 1 条认领池依赖 skip）
 ├── utils/
 │   └── screenshot_utils.py  # 截图附件工具
+├── run_ui_tests.bat         # 方案C 本地一键运行（Windows；Day18）
+├── run_ui_tests.sh          # 方案C 本地一键运行（Linux/macOS/Git-Bash；Day18）
+├── docs/
+│   └── UI自动化CI集成方案决策文档.md  # CI 集成方案决策与面试话术（Day18）
 ├── scripts/                 # 页面探测/运行输出脚本（开发用；*.txt 不入库）
 ├── screenshots/             # 截图产物（gitignore 排除）
 └── allure-results/          # Allure 原始结果（gitignore 排除）
@@ -79,17 +84,30 @@ python -m venv .venv
 
 # 有头模式调试（本地观察页面操作）
 $env:HEADLESS="false"; .venv\Scripts\python.exe -m pytest testcases/test_login_ui.py -v
+
+# 6. （Day18 方案C）一键运行：测试 -> Allure 报告 -> 保留趋势 -> 打开报告
+.\run_ui_tests.bat          # Windows
+./run_ui_tests.sh           # Linux / macOS / Git-Bash
 ```
 
 ## 与接口自动化项目的关系（面试可讲）
 
 - **双项目同一测试账号**：UI 层与接口层共用 .env 的 TEST_USERNAME/PASSWORD，
   实现对同一功能的"协议层 + 表现层"双重验证；
-- **方案C 分工**：接口测试（轻量、快）跑服务器 Jenkins CI 全自动；UI 测试（依赖
-  Chromium 150MB + 内存需求）本地运行，Allure 报告手动合并——面试讲"资源约束下的
-  架构取舍"，决策记录见 week2_day14 手册；
+- **方案C 分工（Day18 实测落地）**：接口测试（轻量、快）跑服务器 Jenkins CI 全自动；
+  UI 测试（依赖 Chromium 150MB + 内存需求）本地一键运行，Allure 报告手动合并——
+  面试讲"资源约束下的架构取舍"，决策数据与话术见 `docs/UI自动化CI集成方案决策文档.md`；
 - **错误密码用例的设计默契**：接口层实测"连续 5 次失败锁定 15 分钟、成功登录重置"，
   UI 层沿用同一契约（错误密码用例放最后 + 宽断言），两层行为一致。
+
+## CI 集成（Day18）
+
+| 项 | 内容 |
+|----|------|
+| 接口测试 | 服务器 Jenkins `lostfound-api-test` 全自动（Poll SCM 30 分钟；CI 模式守卫见接口项目 README） |
+| UI 测试 | **本地一键脚本** `run_ui_tests.bat` / `run_ui_tests.sh`（测试 → Allure 报告 → history 趋势保留 → 本地 HTTP 打开） |
+| 决策文档 | `docs/UI自动化CI集成方案决策文档.md`（2026-08-21 服务器内存实测数据 + 三方案对比 + 面试话术） |
+| 演进路径 | UI 仓库建远程后可选 Jenkins 手动触发参数（`UI_TESTS=true/false`）；服务器扩容 ≥8G 后升级方案A 全自动 |
 
 ## 敏感信息说明
 
