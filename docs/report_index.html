@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>测试报告索引</title>
+<style>
+  body { font-family: "Microsoft YaHei", "PingFang SC", sans-serif; max-width: 720px;
+         margin: 48px auto; padding: 0 16px; color: #333; background: #f7f8fa; }
+  h1 { font-size: 22px; border-bottom: 2px solid #2c6fbb; padding-bottom: 8px; }
+  p.desc { color: #666; font-size: 14px; }
+  ul { list-style: none; padding: 0; }
+  li { background: #fff; border-radius: 8px; margin: 10px 0; padding: 14px 18px;
+       box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  a { color: #2c6fbb; text-decoration: none; font-size: 15px; }
+  a:hover { text-decoration: underline; }
+  .tag { display: inline-block; font-size: 12px; background: #2c6fbb; color: #fff;
+         border-radius: 4px; padding: 2px 8px; margin-right: 8px; }
+  .tag.latest { background: #c0392b; }
+</style>
+</head>
+<body>
+<h1>失物招领系统 — 自动化测试报告索引</h1>
+<p class="desc">接口测试（Jenkins CI 全自动）与 UI 测试（本地一键，方案C）的 Allure 报告。
+每次发布覆盖 <b>最新报告</b>，历史构建报告保留最近 10 次（自动清理）。</p>
+<ul>
+  <li><span class="tag latest">最新</span><a href="https://<报告访问域名>/reports/latest/index.html">最新 Allure 报告（reports/latest）</a></li>
+  <li><span class="tag">历史</span><a href="https://<报告访问域名>/reports/build-1/index.html">构建 #1 报告</a></li>
+  <li><span class="tag">历史</span><a href="https://<报告访问域名>/reports/build-2/index.html">构建 #2 报告</a></li>
+  <li><span class="tag">历史</span><a href="https://<报告访问域名>/reports/build-3/index.html">构建 #3 报告</a></li>
+</ul>
+<p class="desc">注：本文件为模板，上传前把 <code>&lt;报告访问域名&gt;</code> 替换为真实域名
+（替换后的版本只上传 COS，不入任何 Git 仓库）；历史构建链接按实际构建号增删。</p>
+</body>
+</html>
