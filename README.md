@@ -34,8 +34,12 @@ lostfound-ui-test/
 ├── run_ui_tests.bat         # 方案C 本地一键运行（Windows；Day18）
 ├── run_ui_tests.sh          # 方案C 本地一键运行（Linux/macOS/Git-Bash；Day18）
 ├── docs/
-│   └── UI自动化CI集成方案决策文档.md  # CI 集成方案决策与面试话术（Day18）
-├── scripts/                 # 页面探测/运行输出脚本（开发用；*.txt 不入库）
+│   ├── UI自动化CI集成方案决策文档.md  # CI 集成方案决策与面试话术（Day18）
+│   └── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
+├── scripts/
+│   ├── upload_to_cos.py      # Allure 报告上传腾讯云 COS（Day19）
+│   ├── cleanup_cos_reports.py# 清理 COS 历史报告 build-*（保留最近 N 个；Day19）
+│   └── ...                   # 页面探测/运行输出脚本（开发用；*.txt 不入库）
 ├── screenshots/             # 截图产物（gitignore 排除）
 └── allure-results/          # Allure 原始结果（gitignore 排除）
 ```
@@ -108,6 +112,43 @@ $env:HEADLESS="false"; .venv\Scripts\python.exe -m pytest testcases/test_login_u
 | UI 测试 | **本地一键脚本** `run_ui_tests.bat` / `run_ui_tests.sh`（测试 → Allure 报告 → history 趋势保留 → 本地 HTTP 打开） |
 | 决策文档 | `docs/UI自动化CI集成方案决策文档.md`（2026-08-21 服务器内存实测数据 + 三方案对比 + 面试话术） |
 | 演进路径 | UI 仓库建远程后可选 Jenkins 手动触发参数（`UI_TESTS=true/false`）；服务器扩容 ≥8G 后升级方案A 全自动 |
+
+## Allure 报告发布到 COS（Day19）
+
+**思路（方案C 延续）**：UI 测试本地跑，报告上传腾讯云 COS 提供外网链接——
+"本地跑 + 线上看报告"闭环；Jenkins 构建后上传步骤已在手册存档（UI 仓库建远程、
+接口项目 Jenkins 落地时按 `示例/week3_day19_示例-*` 两篇文档执行）。
+
+**配置**：复制 `.env.example` 的 `COS_*` 段到 `.env`（与接口项目 Day14 配置同款，可复用），
+桶名含账号 APPID 后缀，**公网仓库一律 `<COS桶名>` 占位符**。
+
+```bash
+# 1. 上传最新报告（默认传 reports/latest，覆盖式更新）
+.venv\Scripts\python.exe scripts\upload_to_cos.py allure-report reports/latest --verify
+
+# 2. 上传历史构建报告（按构建号归档，供清理脚本管理）
+.venv\Scripts\python.exe scripts\upload_to_cos.py allure-report reports/build-123 --no-version
+
+# 3. 索引页（docs/report_index.html 替换占位符为真实域名后传桶根）
+.venv\Scripts\python.exe scripts\upload_to_cos.py --index docs/report_index.html
+
+# 4. 清理历史（只删 reports/build-*，保留最近 10 个；先 --dry-run 演练）
+.venv\Scripts\python.exe scripts\cleanup_cos_reports.py --dry-run --keep 10
+```
+
+**存储策略**：`reports/latest/` 最新报告（每次覆盖）+ `reports/build-{N}/` 历史
+（保留最近 10 次）+ `reports/archive/` 按月归档（可选）；COS 控制台可加生命周期
+规则自动删除 30 天前历史。
+
+**安全约定**：凭据只走 `.env` 环境变量；两个脚本日志对桶名脱敏（只留前缀 3 字符）；
+`version.json` 仅在配置 `COS_CDN_DOMAIN` 时写 `report_url`，避免真实域名落桶。
+
+**Day19 实测结论**（2026-08-22）：上传 73 个文件到 `reports/latest/` 全程 18.7s，
+SDK 复核桶内 74 个对象（73 + version.json）数量一致；清理脚本实测保留/删除逻辑正确；
+清华源缺 `cos-python-sdk-v5`（走官方 PyPI 安装，需 `NO_PROXY=*`）；
+COS SDK 分页坑已修（`IsTruncated` 是字符串，翻页 marker 为 None 会导致
+`SignatureDoesNotMatch`，见 upload_to_cos.py 注释）；外链浏览器访问待用户截图确认
+（本次未配置 CDN 域名）。
 
 ## 敏感信息说明
 

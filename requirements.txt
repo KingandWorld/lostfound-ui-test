@@ -8,4 +8,7 @@ pytest-rerunfailures>=16.4
 # Day17: 认领用例的数据前置校验与 teardown 清理（与接口项目同款 API 只读/清理）
 requests>=2.31
 
+# Day19: COS report publish (local only, install from pypi.org; tsinghua mirror lacks it)
+cos-python-sdk-v5>=1.9.44
+
 allure-python-commons~=2.16.0
