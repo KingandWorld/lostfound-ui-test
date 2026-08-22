@@ -35,7 +35,8 @@ lostfound-ui-test/
 ├── run_ui_tests.sh          # 方案C 本地一键运行（Linux/macOS/Git-Bash；Day18）
 ├── docs/
 │   ├── UI自动化CI集成方案决策文档.md  # CI 集成方案决策与面试话术（Day18）
-│   └── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
+│   ├── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
+│   └── Jenkins建项执行清单.md        # Jenkins 手动触发建项步骤（方案C 弹性；Day19）
 ├── scripts/
 │   ├── upload_to_cos.py      # Allure 报告上传腾讯云 COS（Day19）
 │   ├── cleanup_cos_reports.py# 清理 COS 历史报告 build-*（保留最近 N 个；Day19）
@@ -111,7 +112,7 @@ $env:HEADLESS="false"; .venv\Scripts\python.exe -m pytest testcases/test_login_u
 | 接口测试 | 服务器 Jenkins `lostfound-api-test` 全自动（Poll SCM 30 分钟；CI 模式守卫见接口项目 README） |
 | UI 测试 | **本地一键脚本** `run_ui_tests.bat` / `run_ui_tests.sh`（测试 → Allure 报告 → history 趋势保留 → 本地 HTTP 打开） |
 | 决策文档 | `docs/UI自动化CI集成方案决策文档.md`（2026-08-21 服务器内存实测数据 + 三方案对比 + 面试话术） |
-| 演进路径 | UI 仓库建远程后可选 Jenkins 手动触发参数（`UI_TESTS=true/false`）；服务器扩容 ≥8G 后升级方案A 全自动 |
+| 演进路径 | UI 仓库已建远程（2026-08-22，gitee/github 双远程）；Jenkins 手动触发建项步骤见 `docs/Jenkins建项执行清单.md`（`UI_TESTS=true/false`）；服务器扩容 ≥8G 后升级方案A 全自动 |
 
 ## Allure 报告发布到 COS（Day19）
 
