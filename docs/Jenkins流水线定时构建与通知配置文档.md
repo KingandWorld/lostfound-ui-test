@@ -228,6 +228,7 @@ email-ext（Extended E-mail Notification）与 mailer 已装（2026-08-23 服务
 
 | # | 卡在哪 | 现象 | 解决 |
 |:-:|--------|------|------|
+| 0 | 参数类型错 | 构建报 `Invalid parameter type "stringParam". Valid parameter types: [booleanParam, choice, credentials, file, text, password, run, string]`（2026-08-24 服务器实测） | 声明式 `parameters {}` 块字符串参数用 **`string`**——`stringParam` 是脚本式（scripted）流水线写法，声明式不支持；Jenkinsfile 已改 `string` 并注释留档 |
 | 1 | Groovy 语法错 | 构建报 `WorkflowScript: N: expecting ...` | 用 **Pipeline Syntax**（任务页 → Pipeline Syntax）生成代码片段；本 Jenkinsfile 已过结构校验（括号/引号平衡、纯 ASCII） |
 | 2 | `credentials('cos-secret-id')` 报错 | 构建环境解析失败 | 凭据 ID 拼写不一致或类型不是 Secret text；在 Manage Credentials 里核对 |
 | 3 | Env Guard 红 | 日志 `[ERROR] env BASE_URL is empty` | 全局环境变量未配；配置后重试（不重启，保存即生效） |
