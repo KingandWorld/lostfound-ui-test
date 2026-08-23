@@ -42,12 +42,16 @@ pipeline {
             defaultValue: false,
             description: 'Run pytest suite? true=run, false=report-only (Plan C)'
         )
-        stringParam(
+        // Declarative parameter types: booleanParam/string/choice/text/password/
+        // credentials/file/run. NOTE: "stringParam" is scripted-pipeline syntax and
+        // fails with MultipleCompilationErrorsException in declarative parameters
+        // (Day20, verified on server 2026-08-24); use "string".
+        string(
             name: 'TEST_PATH',
             defaultValue: 'testcases/',
             description: 'pytest target when UI_TESTS=true (smoke: testcases/test_login_ui.py)'
         )
-        stringParam(
+        string(
             name: 'REPORT_PREFIX',
             defaultValue: 'latest',
             description: 'COS path under reports/: latest or build-N (empty=skip upload)'
