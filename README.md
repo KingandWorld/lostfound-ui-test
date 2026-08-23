@@ -115,7 +115,40 @@ $env:HEADLESS="false"; .venv\Scripts\python.exe -m pytest testcases/test_login_u
 | 接口测试 | 服务器 Jenkins `lostfound-api-test` 全自动（Poll SCM 30 分钟；CI 模式守卫见接口项目 README） |
 | UI 测试 | **本地一键脚本** `run_ui_tests.bat` / `run_ui_tests.sh`（测试 → Allure 报告 → history 趋势保留 → 本地 HTTP 打开） |
 | 决策文档 | `docs/UI自动化CI集成方案决策文档.md`（2026-08-21 服务器内存实测数据 + 三方案对比 + 面试话术） |
-| 演进路径 | UI 仓库已建远程（2026-08-22，gitee/github 双远程）；Jenkins 手动触发建项步骤见 `docs/Jenkins建项执行清单.md`（`UI_TESTS=true/false`）；服务器扩容 ≥8G 后升级方案A 全自动 |
+| 演进路径 | UI 仓库已建远程（2026-08-22，gitee/github 双远程）；Jenkins 声明式流水线（Day20）见下节，完整建项/卡点见 `docs/Jenkins流水线定时构建与通知配置文档.md`；Day19 自由风格手动版清单见 `docs/Jenkins建项执行清单.md`；服务器扩容 ≥8G 后升级方案A 全自动 |
+
+## Jenkins 流水线与定时构建（Day20）
+
+**升级路径**：Day19 的「自由风格手动任务（存档）」升级为**声明式 Pipeline**——
+`Jenkinsfile` 随仓库版本化（参数/触发器/通知全在代码里），方案C 边界不变
+（UI 全量仍本地跑；实测背书：768MiB 容器内跑浏览器必 OOM，见下方卡点 #11）。
+
+- **Jenkinsfile**：Checkout → Env Guard（fail-fast 校验必填变量）→ Setup（venv 缓存 +
+  依赖 + chromium）→ UI Tests（参数化可选）→ Generate Report（容器内 Allure CLI）→
+  Upload to COS（`--prune --verify` 复核）；post：失败自动邮件（email-ext）；
+- **参数**：`UI_TESTS`（默认 false = report-only，方案C 弹性入口）、`TEST_PATH`
+  （冒烟可限定 `testcases/test_login_ui.py`）、`REPORT_PREFIX`（latest / build-N）；
+- **定时构建**：`cron('H 18 * * *')` = UTC 18:00 = **北京时间 02:00**（容器时区是
+  UTC，见卡点 #12），夜间默认 report-only，冒烟/全量两档升级路径见配置文档；
+- **凭据**：COS 密钥走 Jenkins Credentials（Secret text，日志自动掩码）；桶名/域名/账号
+  走全局环境变量；Jenkinsfile 零硬编码、纯 ASCII 注释、零真实值；
+- 完整建项步骤 / SMTP 邮件配置 / 验证清单 / 卡点预案：`docs/Jenkins流水线定时构建与通知配置文档.md`。
+
+**服务器端到端实测（2026-08-24）**：build #1 骨架全绿（report-only 按条件跳过）→
+build #3 冒烟 **5 passed in 18.64s**（容器内存放大至 1024MiB 后 OOM 解除）→
+build #4 报告生成 + 上传复核 **44 = 44 -> OK**（43 文件 / 4.1s，`--prune` 清理 160 个
+历史孤儿）——"拉码 → 依赖 → 测试 → 报告 → 上传 COS"全链路 ≈ **30s** 闭环。
+
+**服务器实测卡点（2026-08-24，详见配置文档卡点表 #0 / #10~#14）**：
+
+| # | 坑 | 一句话解决 |
+|:-:|----|-----------|
+| 0 | 声明式参数类型 | 字符串参数用 `string`，`stringParam` 是脚本式写法（编译直接报错） |
+| 10 | post 块环境变量裸引用 | 报 `MissingPropertyException: No such property: ...`；必须 `env.` 前缀（`params.X` 裸引用正常） |
+| 11 | 容器 OOM | 768MiB 内跑浏览器（哪怕单用例冒烟）会 cgroup 杀 java、容器重启；`docker update --memory 1024m` 放大后可跑冒烟 |
+| 12 | 容器时区 UTC | `docker exec jenkins date` 是 UTC，cron 按容器时区跑；`H 18 * * *` = 北京 02:00 |
+| 13 | 邮件 Not sent | SMTP 未配置（默认 localhost:25 连不上）；按文档第六节配 QQ 465/SSL/授权码 |
+| 14 | 上传复核 MISMATCH | Allure 附件随机 UUID 文件名 + `put_object` 只增不删 → 孤儿堆积；Upload 带 `--prune` 一次清零 |
 
 ## Allure 报告发布到 COS（Day19）
 
