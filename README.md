@@ -3,7 +3,8 @@
 > **技术栈**：Playwright（Python sync_api）+ pytest + allure-pytest + Page Object 模式
 > **开始日期**：2026-08-18（第3周 Day15）
 > **运行策略（方案C，Day18 决策落地）**：UI 测试**本地一键运行**，Allure 报告手动合并——
-> 接口测试跑服务器 Jenkins CI（见 `../lostfound-api-test-示例/`），UI 测试本地跑。
+> 接口测试跑服务器 Jenkins CI（见 `../lostfound-api-test-示例/`），UI 测试本地跑；
+> Jenkins Pipeline 提供服务器手动触发与夜间报告发布入口（Day20，见下）。
 > 决策依据（2026-08-21 服务器内存实测：空闲可用仅 ~758MiB，低于 headless Chromium
 > 单实例需求）：`docs/UI自动化CI集成方案决策文档.md`；决策历程见 week2_day14 手册第 4 步。
 > **配套文档**：`../../示例/week3_day15_示例-UI自动化框架选型与第一个脚本开发手册.md`
@@ -33,10 +34,12 @@ lostfound-ui-test/
 │   └── screenshot_utils.py  # 截图附件工具
 ├── run_ui_tests.bat         # 方案C 本地一键运行（Windows；Day18）
 ├── run_ui_tests.sh          # 方案C 本地一键运行（Linux/macOS/Git-Bash；Day18）
+├── Jenkinsfile              # Jenkins 声明式流水线（拉取→依赖→测试→报告→上传；Day20）
 ├── docs/
 │   ├── UI自动化CI集成方案决策文档.md  # CI 集成方案决策与面试话术（Day18）
-│   ├── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
-│   └── Jenkins建项执行清单.md        # Jenkins 手动触发建项步骤（方案C 弹性；Day19）
+│   ├── Jenkins建项执行清单.md        # Jenkins 手动触发建项步骤（自由风格版；Day19）
+│   ├── Jenkins流水线定时构建与通知配置文档.md  # Pipeline 建项/定时/邮件通知（Day20）
+│   └── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
 ├── scripts/
 │   ├── upload_to_cos.py      # Allure 报告上传腾讯云 COS（Day19）
 │   ├── cleanup_cos_reports.py# 清理 COS 历史报告 build-*（保留最近 N 个；Day19）
@@ -135,6 +138,10 @@ $env:HEADLESS="false"; .venv\Scripts\python.exe -m pytest testcases/test_login_u
 
 # 4. 清理历史（只删 reports/build-*，保留最近 10 个；先 --dry-run 演练）
 .venv\Scripts\python.exe scripts\cleanup_cos_reports.py --dry-run --keep 10
+
+# 5. （Day20）--prune：删除目标前缀下孤儿对象（Allure 附件随机名残留，
+#    长期会撑大复核计数；先 --dry-run 演练）。CI 中建议 latest 上传带 --prune
+.venv\Scripts\python.exe scripts\upload_to_cos.py allure-report reports/latest --prune --verify
 ```
 
 **存储策略**：`reports/latest/` 最新报告（每次覆盖）+ `reports/build-{N}/` 历史
@@ -150,6 +157,15 @@ SDK 复核桶内 74 个对象（73 + version.json）数量一致；清理脚本�
 COS SDK 分页坑已修（`IsTruncated` 是字符串，翻页 marker 为 None 会导致
 `SignatureDoesNotMatch`，见 upload_to_cos.py 注释）；外链浏览器访问待用户截图确认
 （本次未配置 CDN 域名）。
+
+**Day20 实测结论**（2026-08-23）：复核首次发现 **MISMATCH（桶内 114 vs 预期 74）**——
+`put_object` 只覆盖同名对象从不删除，而 Allure 附件是**随机 UUID 文件名**
+（`data/attachments/<uuid>.png`），每次测试运行的附件集合都不同 → 旧版本报告
+残留 40 个孤儿附件对象。修复：`upload_to_cos.py` 新增 `--prune`（删除目标前缀下
+不在本地文件集中的对象，只操作传入前缀、空前缀拒绝执行、`--dry-run` 可演练），
+实测真删 40 对象后复核 74=74 OK，幂等重跑 0 孤儿；期间另踩 **SDK 批量删除坑**：
+`delete_objects` 参数键是 `Object`（单数），不是 AWS 风格的 `Objects`——写错报
+`InvalidArgument`（400），注释已留档。
 
 ## 敏感信息说明
 
