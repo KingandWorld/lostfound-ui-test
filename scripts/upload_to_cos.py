@@ -16,6 +16,10 @@ Options:
     --index FILE   把索引页模板作为桶根 index.html 上传（模板内域名占位符
                    需先替换为真实域名，见 docs/report_index.html 头部说明）
     --no-version   不生成 version.json（历史目录 build-* 可省）
+    --prune        删除目标前缀下不在本地文件集中的孤儿对象（Day20：Allure
+                   附件为随机 UUID 文件名，旧版本残留会让 --verify 复核不一致；
+                   加 --prune 后"前缀对象集"严格等于"本地文件集"）
+    --dry-run      与 --prune 配合：只列出孤儿对象，不实际删除（先演练后执行）
 
 Config (.env or environment variables):
     COS_SECRET_ID    腾讯云 SecretId（Day14 已配置于接口项目 .env，可复用）
@@ -110,14 +114,14 @@ def write_version_json(client, cos_prefix: str, uploaded: list, failed: list) ->
     )
 
 
-def verify_prefix(client, cos_prefix: str, expected: int) -> int:
-    """列出 COS 前缀下全部对象并计数（分页拉全），返回对象数。"""
-    marker, count = "", 0
+def list_prefix_keys(client, cos_prefix: str) -> list:
+    """列出 COS 前缀下全部对象 key（分页拉全），返回 key 列表。"""
+    marker, keys = "", []
     while True:
         resp = client.list_objects(
             Bucket=COS_BUCKET, Prefix=f"{cos_prefix}/", Marker=marker, MaxKeys=PAGE_SIZE
         )
-        count += len(resp.get("Contents", []))
+        keys.extend(item["Key"] for item in resp.get("Contents", []))
         # Day19 实测坑: SDK 的 IsTruncated 是字符串 "true"/"false"(xml 原样解析,不转 bool),
         # "false" 为真值会让本循环多翻一页; 且翻页 marker 取到 None 时, 签名串含
         # marker=None 而 requests 丢弃 None 参数 -> SignatureDoesNotMatch(403)。
@@ -126,9 +130,48 @@ def verify_prefix(client, cos_prefix: str, expected: int) -> int:
             marker = resp.get("NextMarker") or resp.get("Marker") or ""
         else:
             break
+    return keys
+
+
+def verify_prefix(client, cos_prefix: str, expected: int) -> int:
+    """列出 COS 前缀下全部对象并计数（分页拉全），返回对象数。"""
+    keys = list_prefix_keys(client, cos_prefix)
+    count = len(keys)
     status = "OK" if count == expected else "MISMATCH"
     print(f"[verify] COS objects under {cos_prefix}/ = {count}, expected {expected} -> {status}")
     return count
+
+
+def prune_orphans(client, cos_prefix: str, keep_keys: set, dry_run: bool) -> int:
+    """删除目标前缀下不在 keep_keys 中的孤儿对象，返回删除数。
+
+    Day20 实测发现：put_object 只覆盖同名对象、从不删除；Allure 附件文件名是
+    随机 UUID（data/attachments/<uuid>.*），每次测试运行的附件集合都不同——
+    旧版本报告残留的附件对象会越积越多，--verify 复核长期 MISMATCH
+    （2026-08-23 实测 reports/latest/ 下 114 vs 预期 74，多出 40 个孤儿）。
+    --prune 让"上传后的前缀对象集"严格等于"本地文件集"（+ version.json）。
+    只操作传入的 cos_prefix 下对象；cos_prefix 为空时调用方应拒绝（防误删桶根）。
+    """
+    current = list_prefix_keys(client, cos_prefix)
+    orphans = [k for k in current if k not in keep_keys]
+    if not orphans:
+        print(f"[prune] no orphan objects under {cos_prefix}/")
+        return 0
+    print(f"[prune] {len(orphans)} orphan object(s) under {cos_prefix}/"
+          + (" (DRY-RUN, nothing deleted)" if dry_run else ""))
+    for key in orphans[:10]:
+        print(f"    - {key}")
+    if len(orphans) > 10:
+        print(f"    ... and {len(orphans) - 10} more")
+    if dry_run:
+        return 0
+    for i in range(0, len(orphans), 1000):
+        batch = [{"Key": key} for key in orphans[i:i + 1000]]
+        # Day20 实测坑: cos-python-sdk-v5 的 delete_objects 参数键是 "Object"
+        # (单个), 不是 AWS 风格的 "Objects"——写错报 InvalidArgument(400)。
+        client.delete_objects(Bucket=COS_BUCKET, Delete={"Object": batch})
+    print(f"[prune] deleted {len(orphans)} object(s)")
+    return len(orphans)
 
 
 def upload_index_page(client, index_file: Path) -> None:
@@ -152,6 +195,10 @@ def main() -> int:
     parser.add_argument("--index", metavar="FILE", help="upload index page to bucket root")
     parser.add_argument("--verify", action="store_true", help="verify object count after upload")
     parser.add_argument("--no-version", action="store_true", help="skip version.json")
+    parser.add_argument("--prune", action="store_true",
+                        help="delete orphan objects under target prefix (Day20)")
+    parser.add_argument("--dry-run", action="store_true",
+                        help="with --prune: list orphans without deleting")
     args = parser.parse_args()
 
     if not require_config():
@@ -182,6 +229,20 @@ def main() -> int:
 
     if uploaded and not args.no_version:
         write_version_json(client, args.cos_path, uploaded, failed)
+
+    if args.dry_run and not args.prune:
+        print("[prune] --dry-run only applies with --prune, ignored")
+
+    if args.prune:
+        # 安全护栏：空前缀会退化为桶根枚举，--prune 拒绝执行（防误删整个桶）
+        if not args.cos_path:
+            print("[FAIL] --prune requires a non-empty cos_path "
+                  "(refusing to touch bucket root)", file=sys.stderr)
+            return 1
+        keep = set(uploaded)
+        if uploaded and not args.no_version:
+            keep.add(f"{args.cos_path}/version.json")
+        prune_orphans(client, args.cos_path, keep, args.dry_run)
 
     if args.verify and uploaded:
         # version.json 也落桶，预期数 = 上传文件数 + (写版本文件 ? 1 : 0)
