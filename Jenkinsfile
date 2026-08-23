@@ -74,9 +74,13 @@ pipeline {
     }
 
     triggers {
-        // Nightly 02:00-ish, report-only by default (Plan C boundary, see header).
+        // Nightly run, report-only by default (Plan C boundary, see header).
+        // TIMEZONE TRAP (Day20, verified 2026-08-24): the jenkins container runs
+        // UTC (docker exec jenkins date), so cron follows UTC, NOT Beijing time.
+        // 'H 18 * * *' = 18:00 UTC = 02:00 Beijing. If the container TZ is ever
+        // changed to Asia/Shanghai, revert this to 'H 2 * * *'.
         // Disable by removing this block or unchecking the job trigger in Jenkins.
-        cron('H 2 * * *')
+        cron('H 18 * * *')
     }
 
     stages {

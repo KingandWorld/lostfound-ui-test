@@ -82,13 +82,14 @@ Checkout → Env Guard → Setup Environment → [UI Tests 可选] → Generate 
 
 ```groovy
 triggers {
-    // Nightly 02:00-ish, report-only by default (Plan C boundary)
-    cron('H 2 * * *')
+    // 2026-08-24 实测：jenkins 容器内时区是 UTC（docker exec jenkins date）
+    // → cron 按 UTC 跑：'H 18 * * *' = UTC 18:00 = 北京时间次日 02:00
+    cron('H 18 * * *')
 }
 ```
 
 - `H` = hash 散列：在同一分钟内错开执行，避免集群多个任务同时打点（单机 Jenkins 意义不大，但语义正确、可避免与服务器其他凌晨任务（如备份）撞车）；
-- `H 2 * * *` = 每天 02:00 之后的散列分钟（实际可能 02:00~02:59 任意分钟，Jenkins 自动定）；
+- **时区坑（2026-08-24 实测）**：jenkins 容器内 `date` 显示 **UTC**，Jenkins cron 按容器时区执行——`H 2 * * *` 会落在**北京上午 10:00** 而不是凌晨 2 点。Jenkinsfile 已用 `H 18 * * *`（UTC 18:00 = 北京 02:00）并注释留档；若将来把容器时区改成 Asia/Shanghai，需同步改回 `H 2 * * *`；
 - 定时器在任务从 SCM 加载 Jenkinsfile 后生效；**验证方式**：任务页 → 构建触发器区域会显示「Would last have run at ... / Would next run at ...」。
 
 ### 2. 为什么夜间默认是 report-only，而不是跑全量
@@ -231,6 +232,9 @@ email-ext（Extended E-mail Notification）与 mailer 已装（2026-08-23 服务
 | 0 | 参数类型错 | 构建报 `Invalid parameter type "stringParam". Valid parameter types: [booleanParam, choice, credentials, file, text, password, run, string]`（2026-08-24 服务器实测） | 声明式 `parameters {}` 块字符串参数用 **`string`**——`stringParam` 是脚本式（scripted）流水线写法，声明式不支持；Jenkinsfile 已改 `string` 并注释留档 |
 | 10 | post 环境变量裸引用 | 构建整体 SUCCESS 但日志尾部 `Error when executing success post condition: groovy.lang.MissingPropertyException: No such property: COS_CDN_DOMAIN`（2026-08-24 服务器 build #3 实测） | post 块在 node 上下文之外执行，`environment` 定义的变量**裸引用解析为 Groovy 属性**而失败；统一改 `env.COS_CDN_DOMAIN` / `env.MAIL_TO` 前缀；`params.X` 裸引用正常（params 是全局对象） |
 | 11 | 上传复核 MISMATCH（服务器侧） | 服务器构建上传后 `= 194, expected 154 -> MISMATCH`（2026-08-24 build #3 实测） | 与本地同因：Allure 随机 UUID 附件 + `put_object` 只增不删，workspace 残留报告上传后旧附件成孤儿；Upload 段 latest 分支已加 `--prune`（删孤儿后复核 154=154） |
+| 12 | 容器 OOM（冒烟实测证伪） | 冒烟构建 7 分钟后 Jenkins 重启、构建 FAILURE；内核日志 `Memory cgroup out of memory: Killed process ... (java)`，容器 `RestartCount=1`（2026-08-24 实测） | **768MiB 容器上限内跑不动浏览器（哪怕单用例登录冒烟）**：java 基线 ~468MiB + chromium ~500MB 触顶，cgroup OOM killer 杀 java（Jenkins 本体）→ 容器重启。Day19 清单"冒烟在 768MiB 内可跑"的估计被实测证伪。处理：`docker update --memory 1024m --memory-swap 1024m jenkins` 放大后重试（宿主可用 ~684MiB，不宜放 1280m 以免宿主 OOM 波及 zentao 等业务容器）；或接受"服务器只发布报告"的纯方案C（UI 测试本地跑） |
+| 13 | 邮件发出但未送达 | 日志 `Sending email to: ...` + `Not sent to the following valid addresses: ...`（2026-08-24 build #2 实测） | `emailext` 已执行（MAIL_TO 生效），但 **SMTP 服务端未配置**（默认 localhost:25 连不上）→ 按第六节配 `smtp.qq.com` + SSL 465 + 授权码凭据 + Default Recipients，再用"Test configuration by sending test e-mail"验证 |
+| 14 | 定时触发器时区 | 任务页预告触发时间与北京凌晨不符 | 容器 UTC 时区坑（见第三节 1）：Jenkinsfile cron 用 `H 18 * * *`（UTC）= 北京 02:00；改容器时区需同步改回 `H 2 * * *` |
 | 1 | Groovy 语法错 | 构建报 `WorkflowScript: N: expecting ...` | 用 **Pipeline Syntax**（任务页 → Pipeline Syntax）生成代码片段；本 Jenkinsfile 已过结构校验（括号/引号平衡、纯 ASCII） |
 | 2 | `credentials('cos-secret-id')` 报错 | 构建环境解析失败 | 凭据 ID 拼写不一致或类型不是 Secret text；在 Manage Credentials 里核对 |
 | 3 | Env Guard 红 | 日志 `[ERROR] env BASE_URL is empty` | 全局环境变量未配；配置后重试（不重启，保存即生效） |
