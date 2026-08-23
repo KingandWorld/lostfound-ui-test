@@ -30,6 +30,12 @@
 pipeline {
     agent any
 
+    options {
+        // Timestamper plugin (verified installed 2026-08-23): timestamps in console
+        // logs without any GUI checkbox. GUI "Add timestamps" option is NOT needed.
+        timestamps()
+    }
+
     parameters {
         booleanParam(
             name: 'UI_TESTS',

@@ -126,9 +126,9 @@ jenkins 容器: 上限 768MiB，基线已用 488.6MiB → headless 全量峰值 
    - Branches to build：`*/main`
    - Script Path：`Jenkinsfile`
    - Lightweight checkout：勾选（先只拉 Jenkinsfile，验证语法不拉全仓）
-3. **构建环境**：
-   - ☑️ Add timestamps to the Console Output（Timestamper 插件）
-   - ☐ Delete workspace before build **不勾**（venv/浏览器缓存要保留）
+3. **构建环境**：**Pipeline 任务无需任何勾选**（2026-08-24 勘误）：
+   - 「Add timestamps to the Console Output」：该勾选项是自由风格任务界面的写法；Pipeline 任务的时间戳已通过 **Jenkinsfile `options { timestamps() }` 版本化**（Timestamper 插件已装，实测确认），日志自带时间，GUI 什么都不用点；
+   - 「Delete workspace before build」：**自由风格任务专属选项，Pipeline 任务里没有**——无需处理；工作区不清理的策略已由 Jenkinsfile 设计约束（venv/浏览器缓存要保留），别在插件里加 Workspace Cleanup。
 4. **参数**：不在此配置（参数声明在 Jenkinsfile `parameters` 块，SCM 加载后自动出现）。
 5. 保存后：任务页应能看到 3 个参数（`UI_TESTS` / `TEST_PATH` / `REPORT_PREFIX`）与触发器预告（"Would next run at ..."）。
 6. 先按第七节「首次构建验证清单」跑 report-only，再逐步加码。
@@ -139,6 +139,18 @@ jenkins 容器: 上限 768MiB，基线已用 488.6MiB → headless 全量峰值 
 
 ## 五、凭据与环境变量
 
+### 0. 先分清：哪里填真实值、哪里填占位符
+
+**Jenkins 配置界面里全部填真实值**（服务器本地保存，不进任何仓库文件）——
+占位符（`<COS桶名>` / `<报告访问域名>` / `you@example.com` 等）只出现在**会推送公网仓库的文件**（Jenkinsfile / README / 文档）里。两条规则：
+
+| 位置 | 填什么 | 为什么 |
+|------|--------|--------|
+| Jenkins 全局环境变量、Credentials | **真实值**（与本地 `.env` 同值：真实后端地址、真实测试账号、真实桶名含 APPID 后缀、真实密钥） | Jenkins 数据存在服务器 `/var/jenkins_home`，不进 git；占位符是给"会被搜索引擎收录的公网仓库"用的 |
+| Jenkinsfile / README / 本文档 | **占位符**（代码里零真实值） | 公网仓库红线：任何真实桶名/域名/IP/密钥入库 = 泄露 |
+
+所以：文档表格里 `BASE_URL` 的"值"列写的占位符（`https://<目标站点>`），**你在 Jenkins 里配置时替换成真实后端地址**；`TEST_USERNAME` 填真实测试账号 `test01`（与接口项目共用）；`COS_BUCKET` 填真实桶名（含账号 APPID 后缀）；`COS_SECRET_ID/KEY` 填腾讯云 API 密钥——这些值只存在于服务器与你的 `.env`，不会出现在任何仓库文件里。
+
 ### 1. Jenkins Credentials（类型 Secret text，自动掩码）
 
 | ID | 用途 | 说明 |
@@ -148,16 +160,16 @@ jenkins 容器: 上限 768MiB，基线已用 488.6MiB → headless 全量峰值 
 
 ### 2. Jenkins 全局环境变量（Manage Jenkins → System → Global properties）
 
-| 变量 | 值 | 说明 |
-|------|----|------|
-| `BASE_URL` | 后端地址（占位 `https://<目标站点>`） | Env Guard 校验的非空项 |
-| `TEST_USERNAME` | 测试账号 | Env Guard 校验 |
-| `TEST_PASSWORD` | 测试账号密码 | Env Guard 校验；日志只会出现变量名 |
-| `TEST_EMAIL` | 测试邮箱 | 邮箱登录用例用 |
-| `COS_BUCKET` | 桶名（占位 `<COS桶名>`） | 缺失时 Upload 段自动跳过（`when` 条件） |
+| 变量 | 填什么（全部真实值） | 说明 |
+|------|------------------------|------|
+| `BASE_URL` | 真实后端地址（与本地 `.env` 的 `BASE_URL` 同值） | Env Guard 校验的非空项 |
+| `TEST_USERNAME` | 真实测试账号（与接口项目共用 `test01`） | Env Guard 校验 |
+| `TEST_PASSWORD` | 真实测试账号密码 | Env Guard 校验；日志只会出现变量名 |
+| `TEST_EMAIL` | 真实测试邮箱（.env 的 TEST_EMAIL 同值） | 邮箱登录用例用 |
+| `COS_BUCKET` | 真实桶名（**含账号 APPID 后缀**，与本地 .env 同值） | 缺失时 Upload 段自动跳过（`when` 条件） |
 | `COS_REGION` | `ap-guangzhou` | Jenkinsfile 已给默认值，可不配 |
-| `COS_CDN_DOMAIN` | 报告外链域名（占位 `<报告访问域名>`） | 仅影响 post.success 打印的链接与 version.json 的 report_url |
-| `MAIL_TO` | 收件邮箱 | 缺失时 Jenkinsfile 兜底 `you@example.com`（建项时务必配上） |
+| `COS_CDN_DOMAIN` | 真实报告外链域名（若有；没有则留空） | 仅影响 post.success 打印的链接与 version.json 的 report_url |
+| `MAIL_TO` | 真实收件邮箱 | 缺失时 Jenkinsfile 兜底 `you@example.com`（建项时务必配上） |
 
 ### 3. 为什么不在 Jenkinsfile 里写真实值
 
