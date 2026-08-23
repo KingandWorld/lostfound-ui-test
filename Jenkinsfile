@@ -158,8 +158,12 @@ pipeline {
                     sh '''
                         set -e
                         if [ "$REPORT_PREFIX" = "latest" ]; then
-                            echo "== [upload] reports/latest (with verify) =="
-                            venv/bin/python scripts/upload_to_cos.py allure-report reports/latest --verify
+                            echo "== [upload] reports/latest (prune orphans + verify) =="
+                            # --prune: delete orphan objects under the prefix (Allure
+                            # attachments are random-uuid named; put_object never deletes,
+                            # so stale attachments pile up and --verify stays MISMATCH.
+                            # Day20 measured 40 orphans on server build #3, 194 vs 154).
+                            venv/bin/python scripts/upload_to_cos.py allure-report reports/latest --prune --verify
                         else
                             echo "== [upload] reports/$REPORT_PREFIX (history, no version file) =="
                             venv/bin/python scripts/upload_to_cos.py allure-report "reports/$REPORT_PREFIX" --no-version
@@ -172,17 +176,26 @@ pipeline {
 
     post {
         success {
-            echo "Pipeline OK. Report: ${COS_CDN_DOMAIN}/reports/${params.REPORT_PREFIX}/index.html"
+            script {
+                // env.X (NOT bare X): post blocks run outside the node context,
+                // bare environment names throw MissingPropertyException (Day20,
+                // server build #3 verified: "No such property: COS_CDN_DOMAIN").
+                if (env.COS_CDN_DOMAIN) {
+                    echo "Pipeline OK. Report: ${env.COS_CDN_DOMAIN}/reports/${params.REPORT_PREFIX}/index.html"
+                } else {
+                    echo "Pipeline OK. Report served via COS console/custom domain (COS_CDN_DOMAIN not set)"
+                }
+            }
         }
         failure {
             emailext(
-                to: MAIL_TO ?: 'you@example.com',
+                to: env.MAIL_TO ?: 'you@example.com',
                 subject: "[Jenkins] ${env.JOB_NAME} #${env.BUILD_NUMBER} FAILED",
                 body: """Job: ${env.JOB_NAME} (#${env.BUILD_NUMBER})
 Build URL: ${env.BUILD_URL}
 Duration: ${currentBuild.durationString}
 Last stage: ${env.STAGE_NAME}
-Report: ${COS_CDN_DOMAIN}/reports/${params.REPORT_PREFIX}/index.html
+Report: ${env.COS_CDN_DOMAIN}/reports/${params.REPORT_PREFIX}/index.html
 
 Check the console output for the failing stage."""
             )

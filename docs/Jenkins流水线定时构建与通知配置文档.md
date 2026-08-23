@@ -61,8 +61,8 @@ Checkout → Env Guard → Setup Environment → [UI Tests 可选] → Generate 
 | **Setup Environment** | venv 缓存复用 + pip 装 requirements（清华源）+ cos SDK 官方 PyPI 兜底 + Playwright chromium（npmmirror 标准前缀） | 与 Day18/19 实测经验逐条对应；**不清理工作区**（venv/浏览器缓存 300MB 级） |
 | **UI Tests** | `when { params.UI_TESTS }` 才执行；`pytest $TEST_PATH` | 参数化弹性入口；`|| true` 吞退出码——报告与上传照常跑，失败可见性交给 Allure + post.failure |
 | **Generate Report** | allure CLI 存在则 `allure generate --clean`；不存在则告警跳过 | 报告双通道：CLI 生成 + Jenkins Allure 插件；`allure-results` 不存在（首次 report-only 构建）时整段跳过 |
-| **Upload to COS** | `latest` → `--verify` 复核；`build-N` → `--no-version` 历史 | 与 Day19 上传/清理脚本契约一致；`COS_BUCKET` 未配或 `REPORT_PREFIX` 为空时跳过 |
-| **post.failure** | `emailext` 邮件通知 | 见第六节 |
+| **Upload to COS** | `latest` → `--prune --verify`（清孤儿+复核）；`build-N` → `--no-version` 历史 | 与 Day19 上传/清理脚本契约一致；`COS_BUCKET` 未配或 `REPORT_PREFIX` 为空时跳过；`--prune` 于 2026-08-24 服务器实测后加入（见卡点表 #11） |
+| **post.failure** | `emailext` 邮件通知 | 见第六节；**post 块访问环境变量必须 `env.` 前缀**（裸引用报 MissingPropertyException，见卡点表 #10） |
 
 **与计划稿的差异（计划 → 示例实现的原因）**：
 
@@ -229,6 +229,8 @@ email-ext（Extended E-mail Notification）与 mailer 已装（2026-08-23 服务
 | # | 卡在哪 | 现象 | 解决 |
 |:-:|--------|------|------|
 | 0 | 参数类型错 | 构建报 `Invalid parameter type "stringParam". Valid parameter types: [booleanParam, choice, credentials, file, text, password, run, string]`（2026-08-24 服务器实测） | 声明式 `parameters {}` 块字符串参数用 **`string`**——`stringParam` 是脚本式（scripted）流水线写法，声明式不支持；Jenkinsfile 已改 `string` 并注释留档 |
+| 10 | post 环境变量裸引用 | 构建整体 SUCCESS 但日志尾部 `Error when executing success post condition: groovy.lang.MissingPropertyException: No such property: COS_CDN_DOMAIN`（2026-08-24 服务器 build #3 实测） | post 块在 node 上下文之外执行，`environment` 定义的变量**裸引用解析为 Groovy 属性**而失败；统一改 `env.COS_CDN_DOMAIN` / `env.MAIL_TO` 前缀；`params.X` 裸引用正常（params 是全局对象） |
+| 11 | 上传复核 MISMATCH（服务器侧） | 服务器构建上传后 `= 194, expected 154 -> MISMATCH`（2026-08-24 build #3 实测） | 与本地同因：Allure 随机 UUID 附件 + `put_object` 只增不删，workspace 残留报告上传后旧附件成孤儿；Upload 段 latest 分支已加 `--prune`（删孤儿后复核 154=154） |
 | 1 | Groovy 语法错 | 构建报 `WorkflowScript: N: expecting ...` | 用 **Pipeline Syntax**（任务页 → Pipeline Syntax）生成代码片段；本 Jenkinsfile 已过结构校验（括号/引号平衡、纯 ASCII） |
 | 2 | `credentials('cos-secret-id')` 报错 | 构建环境解析失败 | 凭据 ID 拼写不一致或类型不是 Secret text；在 Manage Credentials 里核对 |
 | 3 | Env Guard 红 | 日志 `[ERROR] env BASE_URL is empty` | 全局环境变量未配；配置后重试（不重启，保存即生效） |
