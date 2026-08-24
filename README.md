@@ -16,7 +16,7 @@
 |------|------|------|
 | 被测系统 | `http://<服务器IP>:<端口>` | 失物招领 Web 应用 |
 | 禅道 | `http://<服务器IP>:8081` | 测试管理平台（用例 + Bug） |
-| Allure 报告 | `https://<报告访问域名>/reports/latest/` | 自动化测试报告（Jenkins 定时发布） |
+| Allure 报告 | `https://<被测系统域名>/r/` | 自动化测试报告（服务器 nginx 托管，流量走服务器免费包；COS 归档） |
 
 > ⚠️ **公网仓库安全红线**：真实域名 / 服务器 IP / COS 桶名一律使用占位符（规则见文末「敏感信息说明」）；真实值仅存在于个人笔记与 `.env`。
 
@@ -134,7 +134,7 @@ lostfound-ui-test/
 │   ├── Jenkins建项执行清单.md        # Jenkins 手动触发建项步骤（自由风格版；Day19）
 │   ├── Jenkins流水线定时构建与通知配置文档.md  # Pipeline 建项/定时/邮件通知（Day20）
 │   ├── 第四周素材清单.md             # 简历/面试素材一页速查（Day21）
-│   ├── COS自定义域名外链配置指南.md  # COS 自定义域名绑定与报告外链验证（Day21）
+│   ├── 服务器nginx报告托管配置指南.md  # 报告外链：nginx location /r/ 托管 + 更新机制（Day21）
 │   └── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
 ├── scripts/
 │   ├── upload_to_cos.py      # Allure 报告上传腾讯云 COS（Day19）
@@ -287,11 +287,15 @@ COS SDK 分页坑已修（`IsTruncated` 是字符串，翻页 marker 为 None �
 `SignatureDoesNotMatch`，见 upload_to_cos.py 注释）；外链浏览器访问待用户截图确认
 （本次未配置 CDN 域名）。
 
-**Day21 实测结论**（2026-08-24）：三链接验证发现报告域名在公网 DNS 不存在（NXDOMAIN），
-而真实可用域名托管的是被测系统（Vue SPA，nginx fallback 吃掉未知路径）——报告无外链的
-根因是 **`COS_CDN_DOMAIN` 未配置、桶未绑定自定义域名**。修复步骤（COS 绑定自定义域名 +
-CDN + 公共读 + `.env` 配 `COS_CDN_DOMAIN` 重传，version.json 首次写 `report_url`）见
-`docs/COS自定义域名外链配置指南.md`。
+**Day21 实测结论**（2026-08-24）：三链接验证发现计划文档的报告域名在公网 DNS 不存在
+（NXDOMAIN），真实可用域名托管的是被测系统（Vue SPA，nginx fallback 吃掉未知路径）——
+报告无外链根因是 **`COS_CDN_DOMAIN` 未配置、桶未绑定自定义域名**。方案选型：不走 COS
+自定义域名 + CDN（有流量账单），改**服务器 nginx 托管**（方案B）——访问流量走轻量服务器
+每月免费流量包，零新增成本，且不动 DNS。实测：`location /r/`（前缀匹配优先于 SPA fallback）
+→ `https://<被测系统域名>/r/` 返回 HTTP/2 200 + `<title>Allure Report</title>`，数据/资源
+文件全部可加载（73 文件 = 本地 73 一致）；宝塔 nginx 重载三坑（`/etc/init.d/nginx reload`
+有效，`nginx -s reload` 报 PID 错、`systemctl` 报 not active）已留档。完整步骤见
+`docs/服务器nginx报告托管配置指南.md`。
 
 **Day20 实测结论**（2026-08-23）：复核首次发现 **MISMATCH（桶内 114 vs 预期 74）**——
 `put_object` 只覆盖同名对象从不删除，而 Allure 附件是**随机 UUID 文件名**

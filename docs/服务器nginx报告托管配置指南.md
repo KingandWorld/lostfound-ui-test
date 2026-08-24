@@ -1,0 +1,121 @@
+# 服务器 nginx 报告托管与外链配置指南（Day21 三链接验证配套）
+
+> **编制日期**：2026-08-24（第3周第21天）
+> **背景**：Day21 三链接终极验证发现——计划文档中的报告域名在公网 DNS 不存在（NXDOMAIN），
+> 而真实可用域名（`<被测系统域名>`）托管的是失物招领 Web 应用（Vue SPA，nginx fallback 会
+> 吃掉所有未知路径）；COS 桶内报告对象存在（复核 74=74 OK）但未绑定自定义域名 → 无外链。
+> **方案选型**：放弃 COS 自定义域名 + CDN（会产生 CDN 流量 + 回源流量账单，虽便宜但非免费），
+> 改为**服务器 nginx 托管**——访问流量走轻量服务器每月免费流量包，零新增成本；且不用动 DNS、
+> 不用新证书，链接直接挂现成域名。
+> **红线**：本指南一律占位符；真实域名/服务器 IP 只存在于个人笔记与 `.env`。
+
+---
+
+## 一、最终链接形态
+
+```text
+https://<被测系统域名>/r/
+```
+
+- 路径只留一个 `/r/`（= report），好记好说；比 `/reports/latest/index.html` 短得多；
+- 无尾斜杠自动 301 跳转（`location = /r`）；
+- 目录内容 = 最新一次 Allure 报告（`allure-report/` 全量 73 文件，2026-08-24 实测）。
+
+## 二、总体流程
+
+```text
+本地: 测试 → allure generate（allure-report/）
+      → upload_to_cos.py 传 COS reports/latest（归档，保持现状）
+      → scp 同步到服务器 /www/wwwroot/report/（外链入口）
+服务器: nginx location /r/ 静态服务 → https://<被测系统域名>/r/
+```
+
+**架构说明**：COS 仍是归档与历史 build-* 管理的单一事实来源；服务器目录只放 latest，
+nginx 只做静态文件服务——两边职责分开，报告更新只多一步 scp。
+
+## 三、配置步骤（2026-08-24 已实测完成，含踩坑）
+
+### 1. 建目录 + 上传 + 属主
+
+```bash
+ssh root@<服务器>
+mkdir -p /www/wwwroot/report
+# 本地（Git Bash）：
+scp -r allure-report/. root@<服务器>:/www/wwwroot/report/
+# 回服务器：
+chown -R www:www /www/wwwroot/report        # 宝塔约定：nginx 以 www 用户读文件
+```
+
+### 2. nginx location（先备份）
+
+```bash
+cp /www/server/panel/vhost/nginx/<站点conf>.conf <站点conf>.conf.bak-day21
+```
+
+在站点 443 server 块内（`location /` SPA fallback 之后、安全正则 `location ~* (\.user.ini...` 之前）插入：
+
+```nginx
+location = /r { return 301 /r/; }
+location /r/ {
+    alias /www/wwwroot/report/;
+    index index.html;
+}
+```
+
+**关键点（本日踩坑）**：
+- `/r/` 是**前缀匹配**，nginx 优先选最长前缀 → 必然命中 `/r/` 而不会落到 `location /` 的 SPA fallback；
+- 安全正则块（`\.env`/`.git`/README.md 等敏感文件名拦截）不会命中 `/r/` 路径，互不干扰；
+- `alias` 首尾斜杠必须配对：`location /r/` + `alias /www/wwwroot/report/`。
+
+### 3. 重载（宝塔 nginx 三坑）
+
+```bash
+/etc/init.d/nginx reload        # ✅ 宝塔自编译 nginx 的正确重载方式
+nginx -s reload                 # ❌ 报 invalid PID number "" in "/run/nginx.pid"（宝塔 nginx 不用 /run/nginx.pid）
+systemctl reload nginx          # ❌ 报 not active（宝塔 nginx 不走 systemd）
+```
+
+宝塔 nginx 主进程是 `/www/server/nginx/sbin/nginx -c /www/server/nginx/conf/nginx.conf`，
+重载一律用 `/etc/init.d/nginx reload`（reload 前 `nginx -t` 语法自检）。
+
+### 4. 验证（2026-08-24 实测通过）
+
+```bash
+curl -skI https://<被测系统域名>/r/                    # HTTP/2 200, <title>Allure Report</title>
+curl -skI https://<被测系统域名>/r/data/behaviors.json # 200（数据文件可加载）
+curl -skI https://<被测系统域名>/r/assets/index-*.js   # 200（哈希名 JS 包；app.js 404 是正常现象）
+curl -skI https://<被测系统域名>/r                     # 301 → /r/
+```
+
+## 四、报告更新机制（每次测试后两步）
+
+```bash
+# ① 传 COS 归档（保持现状：--prune 清孤儿 + --verify 复核）
+.venv\Scripts\python.exe scripts\upload_to_cos.py allure-report reports/latest --prune --verify
+
+# ② 同步到服务器外链目录（一条命令；首次/服务器无密钥时交互输密码）
+scp -r allure-report/. root@<服务器>:/www/wwwroot/report/
+```
+
+> 可选演进：把 ② 做成 `scripts/sync_report_to_server.bat`（读服务器信息从环境变量），
+> 或并入 `run_ui_tests.bat` 尾部——本日未做，保持最小改动。
+
+## 五、卡点排查表
+
+| # | 现象 | 解决 |
+|:-:|------|------|
+| 1 | 访问 /r/ 返回 Vue 应用首页 | location /r/ 未生效（reload 没成功）或 nginx 配置未保存；`nginx -t` + `/etc/init.d/nginx reload`；检查 location 是否真在 443 server 块内 |
+| 2 | /r/ 404 | 目录/文件属主不对（nginx 读不到）——`chown -R www:www /www/wwwroot/report`；或 scp 没传完整 |
+| 3 | 页面打开但图表/样式空 | 数据文件（/r/data/*.json）或哈希 JS 404——核对 `find /www/wwwroot/report -type f | wc -l` 与本地一致（本日 73=73）；注意现代 Allure 没有 app.js，哈希文件名是正常的 |
+| 4 | 浏览器刷新还是旧报告 | 浏览器缓存——报告更新后 Ctrl+F5；服务端文件已替换即正常 |
+| 5 | 链接打不开/超时 | 轻量服务器 IP 变化检查（`<被测系统域名>` 解析是否仍指向服务器）；域名解析用的是域名不是 IP，一般不受影响 |
+| 6 | 计划文档里的报告域名打不开 | 该域名公网 DNS 不存在（NXDOMAIN）——以本指南 `<被测系统域名>/r/` 为准，个人笔记改正 |
+
+## 六、与现有设计的关系
+
+- **COS 职责收窄**：归档（reports/latest、reports/build-*）+ 清理脚本管理历史；外链不再走 COS
+  自定义域名，`COS_CDN_DOMAIN` 可不配（version.json 不写 report_url，避免真实域名落桶的讨论
+  也一并省掉）；
+- **流量账单**：外链访问全部走服务器每月免费流量包，零新增成本；COS 只承担上传（免费）+ 归档存储；
+- **面试话术**："外链报告挂服务器 nginx（流量走免费包），COS 做归档与历史管理"——成本意识 + 架构分工，
+  是 Day18 方案C 内存决策之后的第二个资源决策案例。
