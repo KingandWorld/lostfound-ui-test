@@ -134,6 +134,7 @@ lostfound-ui-test/
 │   ├── Jenkins建项执行清单.md        # Jenkins 手动触发建项步骤（自由风格版；Day19）
 │   ├── Jenkins流水线定时构建与通知配置文档.md  # Pipeline 建项/定时/邮件通知（Day20）
 │   ├── 第四周素材清单.md             # 简历/面试素材一页速查（Day21）
+│   ├── COS自定义域名外链配置指南.md  # COS 自定义域名绑定与报告外链验证（Day21）
 │   └── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
 ├── scripts/
 │   ├── upload_to_cos.py      # Allure 报告上传腾讯云 COS（Day19）
@@ -285,6 +286,12 @@ SDK 复核桶内 74 个对象（73 + version.json）数量一致；清理脚本�
 COS SDK 分页坑已修（`IsTruncated` 是字符串，翻页 marker 为 None 会导致
 `SignatureDoesNotMatch`，见 upload_to_cos.py 注释）；外链浏览器访问待用户截图确认
 （本次未配置 CDN 域名）。
+
+**Day21 实测结论**（2026-08-24）：三链接验证发现报告域名在公网 DNS 不存在（NXDOMAIN），
+而真实可用域名托管的是被测系统（Vue SPA，nginx fallback 吃掉未知路径）——报告无外链的
+根因是 **`COS_CDN_DOMAIN` 未配置、桶未绑定自定义域名**。修复步骤（COS 绑定自定义域名 +
+CDN + 公共读 + `.env` 配 `COS_CDN_DOMAIN` 重传，version.json 首次写 `report_url`）见
+`docs/COS自定义域名外链配置指南.md`。
 
 **Day20 实测结论**（2026-08-23）：复核首次发现 **MISMATCH（桶内 114 vs 预期 74）**——
 `put_object` 只覆盖同名对象从不删除，而 Allure 附件是**随机 UUID 文件名**
