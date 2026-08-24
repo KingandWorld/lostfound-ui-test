@@ -1,4 +1,98 @@
-# lostfound-ui-test — 失物招领系统 UI 自动化测试项目
+# 失物招领系统 — 全栈自动化测试项目
+
+> 一个面向**真实 Web 应用**的完整测试实践项目：功能测试（禅道）+ 接口自动化（pytest+requests）+ UI 自动化（Playwright）+ CI/CD（Jenkins Pipeline → Allure 报告 → 腾讯云 COS）。
+> 本仓库为 **UI 自动化测试**仓库（`lostfound-ui-test-示例`），同时作为项目的 **CI/CD 中枢**（Jenkinsfile / COS 脚本 / 配置文档）与**项目门面 README**（Day21 升级）。
+
+## 📋 项目概述
+
+- **功能测试**：60+ 条用例，覆盖核心业务流程，禅道全生命周期管理（第1周）
+- **接口自动化**：55 条 pytest 用例，Jenkins CI 集成（第2周；仓库见「相关文档」）
+- **UI 自动化**：21 条 Playwright 用例，Page Object 模式（第3周；本仓库）
+- **CI/CD**：Jenkins Pipeline → Allure 报告 → 腾讯云 COS 自动部署（夜间定时）
+
+## 🌐 在线访问
+
+| 服务 | 地址 | 说明 |
+|------|------|------|
+| 被测系统 | `http://<服务器IP>:<端口>` | 失物招领 Web 应用 |
+| 禅道 | `http://<服务器IP>:8081` | 测试管理平台（用例 + Bug） |
+| Allure 报告 | `https://<报告访问域名>/reports/latest/` | 自动化测试报告（Jenkins 定时发布） |
+
+> ⚠️ **公网仓库安全红线**：真实域名 / 服务器 IP / COS 桶名一律使用占位符（规则见文末「敏感信息说明」）；真实值仅存在于个人笔记与 `.env`。
+
+## 🛠 技术栈
+
+| 层 | 技术 |
+|----|------|
+| 接口自动化 | pytest + requests + allure-pytest + pymysql（数据库校验，SSH 隧道连真实库） |
+| UI 自动化 | Playwright（Python sync API）+ pytest + allure-pytest + Page Object 模式 |
+| CI/CD | Jenkins Declarative Pipeline（Jenkinsfile 版本化）+ 腾讯云 COS + CDN + Docker |
+| 测试管理 | 禅道（用例管理 + 缺陷跟踪） |
+
+## 📊 测试成果（数字可溯源，来源见 `docs/第四周素材清单.md`）
+
+| 指标 | 数据 | 来源 |
+|------|------|------|
+| 功能测试用例 | 60+ 条（禅道管理） | 第1周功能测试 |
+| 接口自动化用例 | 55 条（认证12/物品20/搜索10/认领5/数据库4/端到端4） | API 仓库 README（Day12 验收版） |
+| UI 自动化用例 | 21 条（登录5/发布4/搜索2/注册5/认领5），基线 19 passed + 2 skipped | 本仓库「测试覆盖」+ Day20 测试运行报告 |
+| 发现缺陷 | 15+ 个（含 1 个 XSS 安全漏洞 + 2 个业务逻辑缺陷：注册 payload 缺 `agreementAccepted` / 认领池永久不可再认领） | 功能测试报告 + Day6/17 实测记录 |
+| 代码规模 | ~5,400 行（API 2,136 + UI 3,235） | 2026-08-24 `wc` 实测 |
+| CI 端到端 | 服务器全链路 ≈ 30s（冒烟 18.64s + 报告 2s + 上传 4.1s，build #4） | Day20 测试运行报告 |
+
+## 📁 项目结构（双仓库，方案C）
+
+```
+lostfound-testing/                    # 概念总目录：实际为两个独立 git 仓库
+├── lostfound-api-test-示例/          # 接口自动化仓库（第2周；标签 v1.0~v1.2）
+│   ├── testcases/                    # 55 条用例（认证/物品/搜索/认领/数据库/端到端）
+│   ├── config/  utils/  scripts/     # 数据驱动 / 数据库校验工具 / Jenkins 构建脚本
+│   └── Jenkins 任务：lostfound-api-test（Poll SCM 30 分钟，CI 模式守卫）
+└── lostfound-ui-test-示例/           # UI 自动化仓库（第3周；本仓库；CI/CD 中枢）
+    ├── Jenkinsfile                   # 声明式 Pipeline（Day20；参数/触发器/通知版本化）
+    ├── pages/  testcases/            # Page Object 页面类（7 个）+ 21 条用例
+    ├── conftest.py                   # browser/page fixture + 失败现场信息 hook
+    ├── run_ui_tests.bat/.sh          # 方案C 本地一键运行（Day18）
+    ├── scripts/                      # COS 上传/清理脚本（Day19~20，--prune 加固）
+    ├── docs/                         # 决策文档 / Jenkins 配置 / 第四周素材清单
+    └── 远程：gitee + github 双远程（Day19 建）
+```
+
+> 分工（方案C，Day18 实测决策）：接口测试（轻量）跑服务器 Jenkins CI 全自动；UI 测试（依赖 Chromium + 内存）本地一键运行；Jenkins Pipeline 提供服务器手动触发与夜间报告发布入口。
+
+## 🚀 快速开始（项目级）
+
+```bash
+# 1. 克隆两个仓库
+git clone https://gitee.com/<用户名>/lostfound-api-test-示例.git
+git clone https://gitee.com/<用户名>/lostfound-ui-test-示例.git
+
+# 2. 各自创建虚拟环境并安装依赖（UI 仓库）
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt -i https://mirrors.aliyun.com/pypi/simple/
+.venv\Scripts\playwright install chromium
+
+# 3. 配置环境变量：复制 .env.example 为 .env，填写 BASE_URL / 测试账号（两仓库同一测试账号）
+
+# 4. 运行测试并查看报告
+.venv\Scripts\python.exe -m pytest -v                          # UI 全量（21 条）
+.\run_ui_tests.bat                                             # 一键：测试→报告→打开
+# 接口测试：cd ../lostfound-api-test-示例 && pytest -v --alluredir=./allure-results
+```
+
+详细命令（含 headless 调试、COS 上传、Jenkins 触发）见下文「本仓库详解」。
+
+## 🔗 相关文档
+
+- 测试计划 / 功能测试报告 / API 文档：见 `docs/` 与 `示例/`（Day1~14 各日手册）
+- 接口自动化项目：`../lostfound-api-test-示例/README.md`（55 条用例 + 接口契约实测）
+- CI/CD 决策文档：`docs/UI自动化CI集成方案决策文档.md`（Day18，三方案对比 + 面试话术）
+- Jenkins 流水线配置：`docs/Jenkins流水线定时构建与通知配置文档.md`（Day20）
+- **简历素材一页速查：`docs/第四周素材清单.md`（Day21 新增：关键数字/截图清单/简历 bullet 初稿/三链接）**
+
+---
+
+# 本仓库详解：UI 自动化测试（lostfound-ui-test）
 
 > **技术栈**：Playwright（Python sync_api）+ pytest + allure-pytest + Page Object 模式
 > **开始日期**：2026-08-18（第3周 Day15）
@@ -39,6 +133,7 @@ lostfound-ui-test/
 │   ├── UI自动化CI集成方案决策文档.md  # CI 集成方案决策与面试话术（Day18）
 │   ├── Jenkins建项执行清单.md        # Jenkins 手动触发建项步骤（自由风格版；Day19）
 │   ├── Jenkins流水线定时构建与通知配置文档.md  # Pipeline 建项/定时/邮件通知（Day20）
+│   ├── 第四周素材清单.md             # 简历/面试素材一页速查（Day21）
 │   └── report_index.html     # COS 报告索引页模板（域名占位符，替换后传桶根；Day19）
 ├── scripts/
 │   ├── upload_to_cos.py      # Allure 报告上传腾讯云 COS（Day19）
@@ -69,7 +164,7 @@ lostfound-ui-test/
 前端修复 payload 后取消 skip 即可启用。Day16 曾误报"协议弹窗无法关闭"，已勘误（见
 Day17 测试运行报告 8.2 节）。
 
-## 快速开始
+## 快速开始（本仓库，详细版）
 
 ```bash
 # 1. 创建并激活虚拟环境
@@ -203,5 +298,5 @@ COS SDK 分页坑已修（`IsTruncated` 是字符串，翻页 marker 为 None �
 ## 敏感信息说明
 
 - `.env` 含真实 `BASE_URL` 与测试账号密码，**已 gitignore，绝不入库**；
-- 代码注释/docstring 中一律用占位符（`<服务器IP>` / `<目标站点>`），示例 URL 不写真实域名；
+- 代码注释/docstring 中一律用占位符（`<服务器IP>` / `<目标站点>` / `<报告访问域名>` / `<COS桶名>`），示例 URL 不写真实域名；
 - 错误密码、账号锁定机制等契约信息来自真实系统实测，属于测试知识，不涉及凭据。
