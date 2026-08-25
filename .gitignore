@@ -17,3 +17,8 @@ scripts/*.txt
 
 # 开发用 probe 调试脚本:仅本地使用,不入库(2026-08-25)
 scripts/probe_*
+
+# 开发杂项(本地工具/页面抓取产物,不入库)
+scripts/check_pycharm_sdk.py
+scripts/_*.js
+scripts/probe_*
