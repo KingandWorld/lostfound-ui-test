@@ -14,3 +14,6 @@ screenshots/
 
 # 探测/运行输出（含真实域名等敏感输出，不入库）
 scripts/*.txt
+
+# 开发用 probe 调试脚本:仅本地使用,不入库(2026-08-25)
+scripts/probe_*
